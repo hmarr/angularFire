@@ -109,7 +109,6 @@
   AngularFire = function($q, $parse, $timeout, ref) {
     this._q = $q;
     this._parse = $parse;
-    this._timeout = $timeout;
 
     // set to true when $bind is called, this tells us whether we need
     // to synchronize a $scope variable during data change events
@@ -133,6 +132,13 @@
       child_changed: [],
       child_removed: []
     };
+
+    // used to trigger Angular's compiler updates when
+    // we receive new data from the server, _$to is the
+    // angular $timeout service, and _timeoutEvents is a queue
+    // containing functions to run in the next $timeout execution
+    this._$to = $timeout;
+    this._timeoutEvents = [];
 
     if (typeof ref == "string") {
       throw new Error("Please provide a Firebase reference instead " +
@@ -347,7 +353,7 @@
       //             returned.
       object.$child = function(key) {
         var af = new AngularFire(
-          self._q, self._parse, self._timeout, self._fRef.ref().child(key)
+          self._q, self._parse, self._$to, self._fRef.ref().child(key)
         );
         return af.construct();
       };
@@ -424,6 +430,17 @@
       // Return the reference used by this object.
       object.$getRef = function() {
         return self._fRef.ref();
+      };
+
+      // Return a synchronized array
+      object.$asArray = function($scope) {
+        var sync = new ReadOnlySynchronizedArray(object);
+        if( $scope ) {
+          $scope.$on('$destroy', sync.dispose.bind(sync));
+        }
+        var arr = sync.getList();
+        arr.$firebase = object;
+        return arr;
       };
 
       self._object = object;
@@ -567,31 +584,23 @@
     // this method triggers a self._timeout event, which forces Angular to run $apply()
     // and compile the DOM content
     _triggerModelUpdate: function() {
-      // since the timeout runs asynchronously, multiple updates could invoke this method
-      // before it is actually executed (this occurs when Firebase sends it's initial deluge of data
-      // back to our _getInitialValue() method, or when there are locally cached changes)
-      // We don't want to trigger it multiple times if we can help, creating multiple dirty checks
-      // and $apply operations, which are costly, so if one is already queued, we just wait for
-      // it to do its work.
-      if( !this._runningTimer ) {
-        var self = this;
-        this._runningTimer = self._timeout(function() {
-          self._runningTimer = null;
+      var self = this;
+      self._timeout(function() {
+        self._runningTimer = null;
 
-          // If there is an implicit binding, also update the local model.
-          if (!self._bound) {
-            return;
-          }
+        // If there is an implicit binding, also update the local model.
+        if (!self._bound) {
+          return;
+        }
 
-          var current = self._object;
-          var local = self._parse(self._name)(self._scope);
-          // If remote value matches local value, don't do anything, otherwise
-          // apply the change.
-          if (!angular.equals(current, local)) {
-            self._parse(self._name).assign(self._scope, angular.copy(current));
-          }
-        });
-      }
+        var current = self._object;
+        var local = self._parse(self._name)(self._scope);
+        // If remote value matches local value, don't do anything, otherwise
+        // apply the change.
+        if (!angular.equals(current, local)) {
+          self._parse(self._name).assign(self._scope, angular.copy(current));
+        }
+      });
     },
 
     // Called whenever there is a remote change for a primitive value.
@@ -625,19 +634,10 @@
       if( evt === 'loaded' ) {
         this._on[evt] = []; // release memory
       }
-      var self = this;
 
-      function _wrapTimeout(cb, param) {
-        self._timeout(function() {
-          cb(param);
-        });
-      }
-
-      if (cbs.length > 0) {
-        for (var i = 0; i < cbs.length; i++) {
-          if (typeof cbs[i] == "function") {
-            _wrapTimeout(cbs[i], param);
-          }
+      for (var i = 0; i < cbs.length; i++) {
+        if (typeof cbs[i] == "function") {
+          this._timeout(cbs[i].bind(null, param));
         }
       }
     },
@@ -783,6 +783,26 @@
       // by angular.copy, but only for later versions of AngularJS.
       var newObj = _findReplacePriority(angular.copy(obj));
       return angular.fromJson(angular.toJson(newObj));
+    },
+
+    // This prevents multiple timeout events from being triggered, which result in multiple digest
+    // and compile operations. Instead, we invoke all the synchronous requests to timeout together
+    // which improves performance by handling several updates in a single compile scope
+    _timeout: function(fn) {
+      var self = this;
+      // add our item to the event list
+      self._timeoutEvents.push(fn||function(){});
+      // if our event is the fist one added, then request a new $timeout event
+      if( self._timeoutEvents.length === 1 ) {
+        self._$to(function() {
+          // invoke any events accumulated since the $timeout was requested
+          var events = self._timeoutEvents;
+          self._timeoutEvents = [];
+          angular.forEach(events, function(fn) {
+            fn();
+          });
+        });
+      }
     }
   };
 
@@ -1015,4 +1035,205 @@
       }
     }
   };
+
+  function ReadOnlySynchronizedArray($obj, eventCallback) {
+    this.subs = []; // used to track event listeners for dispose()
+    this.ref = $obj.$getRef();
+    this.eventCallback = eventCallback||function() {};
+    this.list = this._initList();
+    this._initListeners();
+  }
+
+  ReadOnlySynchronizedArray.prototype = {
+    getList: function() {
+      return this.list;
+    },
+
+    add: function(data) {
+      var key = this.ref.push().name();
+      var ref = this.ref.child(key);
+      if( arguments.length > 0 ) { ref.set(parseForJson(data), this._handleErrors.bind(this, key)); }
+      return ref;
+    },
+
+    set: function(key, newValue) {
+      this.ref.child(key).set(parseForJson(newValue), this._handleErrors.bind(this, key));
+    },
+
+    update: function(key, newValue) {
+      this.ref.child(key).update(parseForJson(newValue), this._handleErrors.bind(this, key));
+    },
+
+    setPriority: function(key, newPriority) {
+      this.ref.child(key).setPriority(newPriority);
+    },
+
+    remove: function(key) {
+      this.ref.child(key).remove(this._handleErrors.bind(null, key));
+    },
+
+    posByKey: function(key) {
+      return findKeyPos(this.list, key);
+    },
+
+    placeRecord: function(key, prevId) {
+      if( prevId === null ) {
+        return 0;
+      }
+      else {
+        var i = this.posByKey(prevId);
+        if( i === -1 ) {
+          return this.list.length;
+        }
+        else {
+          return i+1;
+        }
+      }
+    },
+
+    getRecord: function(key) {
+      var i = this.posByKey(key);
+      if( i === -1 ) { return null; }
+      return this.list[i];
+    },
+
+    dispose: function() {
+      var ref = this.ref;
+      this.subs.forEach(function(s) {
+        ref.off(s[0], s[1]);
+      });
+      this.subs = [];
+    },
+
+    _serverAdd: function(snap, prevId) {
+      var data = parseVal(snap.name(), snap.val());
+      this._moveTo(snap.name(), data, prevId);
+      this._handleEvent('child_added', snap.name(), data);
+    },
+
+    _serverRemove: function(snap) {
+      var pos = this.posByKey(snap.name());
+      if( pos !== -1 ) {
+        this.list.splice(pos, 1);
+        this._handleEvent('child_removed', snap.name(), this.list[pos]);
+      }
+    },
+
+    _serverChange: function(snap) {
+      var pos = this.posByKey(snap.name());
+      if( pos !== -1 ) {
+        this.list[pos] = applyToBase(this.list[pos], parseVal(snap.name(), snap.val()));
+        this._handleEvent('child_changed', snap.name(), this.list[pos]);
+      }
+    },
+
+    _serverMove: function(snap, prevId) {
+      var id = snap.name();
+      var oldPos = this.posByKey(id);
+      if( oldPos !== -1 ) {
+        var data = this.list[oldPos];
+        this.list.splice(oldPos, 1);
+        this._moveTo(id, data, prevId);
+        this._handleEvent('child_moved', snap.name(), data);
+      }
+    },
+
+    _moveTo: function(id, data, prevId) {
+      var pos = this.placeRecord(id, prevId);
+      this.list.splice(pos, 0, data);
+    },
+
+    _handleErrors: function(key, err) {
+      if( err ) {
+        this._handleEvent('error', null, key);
+        console.error(err);
+      }
+    },
+
+    _handleEvent: function(eventType, recordId, data) {
+      // console.log(eventType, recordId);
+      this.eventCallback(eventType, recordId, data);
+    },
+
+    _initList: function() {
+      var list = [];
+      list.$indexOf = this.posByKey.bind(this);
+      list.$add = this.add.bind(this);
+      list.$remove = this.remove.bind(this);
+      list.$set = this.set.bind(this);
+      list.$update = this.update.bind(this);
+      list.$move = this.setPriority.bind(this);
+      list.$rawData = function(key) { return parseForJson(this.getRecord(key)); }.bind(this);
+      list.$off = this.dispose.bind(this);
+      return list;
+    },
+
+    _initListeners: function() {
+      this._monit('child_added', this._serverAdd);
+      this._monit('child_removed', this._serverRemove);
+      this._monit('child_changed', this._serverChange);
+      this._monit('child_moved', this._serverMove);
+    },
+
+    _monit: function(event, method) {
+      this.subs.push([event, this.ref.on(event, method.bind(this))]);
+    }
+  };
+
+  function applyToBase(base, data) {
+    // do not replace the reference to objects contained in the data
+    // instead, just update their child values
+    if( isObject(base) && isObject(data) ) {
+      var key;
+      for(key in base) {
+        if( key !== '$id' && base.hasOwnProperty(key) && !data.hasOwnProperty(key) ) {
+          delete base[key];
+        }
+      }
+      for(key in data) {
+        if( data.hasOwnProperty(key) ) {
+          base[key] = data[key];
+        }
+      }
+      return base;
+    }
+    else {
+      return data;
+    }
+  }
+
+  function isObject(x) {
+    return typeof(x) === 'object' && x !== null;
+  }
+
+  function findKeyPos(list, key) {
+    for(var i = 0, len = list.length; i < len; i++) {
+      if( list[i].$id === key ) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function parseForJson(data) {
+    if( data && typeof(data) === 'object' ) {
+      delete data.$id;
+      if( data.hasOwnProperty('.value') ) {
+        data = data['.value'];
+      }
+    }
+    if( data === undefined ) {
+      data = null;
+    }
+    return data;
+  }
+
+  function parseVal(id, data) {
+    if( typeof(data) !== 'object' || !data ) {
+      data = { '.value': data };
+    }
+    data.$id = id;
+    return data;
+  }
+
 })();

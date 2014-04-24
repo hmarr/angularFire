@@ -9,10 +9,12 @@ Firebase is a full backend so you don't need servers to build your Angular app!
 for more information*.
 
 We also have a [tutorial](https://www.firebase.com/tutorial/#tutorial/angular/0),
-[documentation](https://www.firebase.com/docs/angular/index.html) and an
-[API reference](https://www.firebase.com/docs/angular/reference.html).
+[documentation](https://www.firebase.com/docs/angular/index.html) and
+[annotated source code](https://www.firebase.com/docs/angular/reference.html), which serves
+as the API reference and developer's guide.
 
-Join our [Firebase + Angular Google Group](https://groups.google.com/forum/#!forum/firebase-angular) to ask questions, provide feedback, and share apps you've built with Firebase and Angular.
+Join our [Firebase + Angular Google Group](https://groups.google.com/forum/#!forum/firebase-angular) to ask
+questions, provide feedback, and share apps you've built with Firebase and Angular.
 
 Development
 -----------
@@ -47,7 +49,8 @@ grunt build
 ```
 
 In addition to the automated test suite, there is an additional manual test suite that ensures that the
-$firebaseSimpleLogin service is working properly with auth providers. These tests are run using karma with the following command:
+$firebaseSimpleLogin service is working properly with FirebaseSimpleLogin. These tests are run using karma
+with the following command:
 
 ```bash
 karma start tests/manual_karma.conf.js

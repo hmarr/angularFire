@@ -51,6 +51,20 @@ module.exports = function(grunt) {
         options : {
           interrupt : true
         }
+      },
+      unitTests: {
+        files: ['tests/unit/*.js', 'tests/lib/*.js'],
+        tasks: ['karma:continuous', 'notify:test'],
+        options: {
+          interrupt: true
+        }
+      },
+      e2eTests: {
+        files: ['tests/e2e/*.js', 'tests/lib/*.js'],
+        tasks: ['exec:casperjs', 'notify:test'],
+        options: {
+          interrupt: true
+        }
       }
     },
 
@@ -59,6 +73,12 @@ module.exports = function(grunt) {
         options: {
           title: 'Grunt Watch',
           message: 'Build Finished'
+        }
+      },
+      test: {
+        options: {
+          title: 'Grunt Watch',
+          message: 'Tests finished'
         }
       }
     },
@@ -76,23 +96,7 @@ module.exports = function(grunt) {
          configFile: 'tests/automatic_karma.conf.js',
          autowatch: true,
          browsers: ['PhantomJS']
-      }/*,
-      "kato": {
-         configFile: 'tests/automatic_karma.conf.js',
-         options: {
-            files: [
-               '../bower_components/angular/angular.js',
-               '../bower_components/angular-mocks/angular-mocks.js',
-               '../lib/omnibinder-protocol.js',
-               'lib/lodash.js',
-               'lib/MockFirebase.js',
-               '../angularfire.js',
-               'unit/AngularFire.spec.js'
-            ]
-         },
-         autowatch: true,
-         browsers: ['PhantomJS']
-      }*/
+      }
     },
 
     changelog: {
