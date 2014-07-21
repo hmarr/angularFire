@@ -339,7 +339,7 @@ All such changes will have to performed via one of the `$save`/`$set`/`$remove` 
 on this object, or by utilizing `$bindTo` (see more below).
 
 ``` js
-myapp.controller("MyController", ["$scope"', "$firebase",
+myapp.controller("MyController", ["$scope", "$firebase",
   function($scope, $firebase) {
      var obj = $firebase(new Firebase(URL)).$asObject();
 
