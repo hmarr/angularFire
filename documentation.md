@@ -812,7 +812,7 @@ list.$loaded().then(function() {
 This technique can be used to transform how data is stored by overriding the
 following private methods:
 
- - **$$added**: called with a snapshot and prevChild any itme a `child_added` event occurs
+ - **$$added**: called with a snapshot and prevChild any time a `child_added` event occurs
  - **$$updated**: called with a snapshot any time a `child_changed` event occurs
  - **$$moved**: called with a snapshot and prevChild any time `child_moved` event occurs
  - **$$removed**: called with a snapshot any time a `child_removed` event occurs
