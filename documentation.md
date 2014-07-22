@@ -531,7 +531,7 @@ list.$save(2);
 ``` html
 <!-- in the dom -->
 <li ng-repeat="item in list">
-  <input ng-model="item.foo" ng-change="list.save(item)" />
+  <input ng-model="item.foo" ng-change="list.$save(item)" />
 </li>
 ```
 
@@ -540,7 +540,8 @@ list.$save(2);
 Creates a new record in Firebase and adds the record to our synchronized array.
 
 This method returns a promise which is resolved after data has been saved to the server.
-The promise resolves to the ref for the newly added record, providing easy access to its key.
+The promise resolves to the Firebase reference for the newly added record, providing 
+easy access to its key.
 
 ```js
 var list = $firebase(ref).$asArray();
@@ -567,12 +568,13 @@ It accepts either an array index or a reference to an item that exists in the ar
 ```
 
 This method returns a promise which is resolved after data has been saved to the server.
-The promise resolves to the ref for the saved record, providing easy access to its key.
+The promise resolves to the Firebase reference for the saved record, providing easy 
+access to its key.
 
 ```js
 var list = $firebase(ref).$asArray();
 list[2].foo = 'bar';
-list.save(2).then(function(ref) {
+list.$save(2).then(function(ref) {
    ref.name() === list[2].$id; //true
 });
 ```
@@ -720,6 +722,9 @@ which refers to the name of an Angular factory, or functions which should be the
 itself.
 
 ```
+// create a factory to pass into $firebase
+var WidgetFactory = $FirebaseObject.$extendFactory({ /* cool stuff */ });
+
 // create a $firebase instance which uses the WidgetFactory factory
 $firebase(ref, {firebaseObject: 'WidgetFactory'});
 
@@ -1062,7 +1067,7 @@ In addition, this login object has several functions for managing your login sta
 
 ### $getCurrentUser()
 
-The `$getCurrentUser` function returns a future that will be resolved with the user info for the
+The `$getCurrentUser` function returns a promise that will be resolved with the user info for the
 currently logged-in user. Note that the user info will be null if no user is logged in.
 
 
