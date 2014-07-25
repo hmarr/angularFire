@@ -371,14 +371,25 @@ The Firebase key where this record is stored. The same as `obj.$inst().$ref().na
 The priority for this record according to the last update we received. Modifying this value
 and then calling `$save()` will also update the server's priority.
 
+**IMPORTANT NOTE**: Because Angular's $watch function ignores keys prefixed with `$`, this
+value cannot be changed inside the `$bindTo` function.
+
 ### $value
 
 If the value in Firebase is a primitive (boolean, string, or number) then the value will
 be stored under this `$value` key. Modifying this value and then calling `$save` will also
 update the server's value.
 
-Note that any time this value exists, all other keys are ignored. To change a primitive to
-an object, delete `$value` and add other keys to the data.
+Note that any time other keys exist, this one will be ignored. To change an object to
+a primitive value, delete the other keys and add this the data. As a shortcut, we can use:
+
+```
+var obj = $firebase(ref).$asObject(); // an object with data keys
+$firebaseUtils.updateRec(obj, 'primitive_value'); // updateRec will delete the other keys for us
+```
+
+**IMPORTANT NOTE**: Because Angular's $watch function ignores keys prefixed with `$`, this
+value cannot be changed inside the `$bindTo` function.
 
 ### $save()
 
@@ -437,10 +448,8 @@ obj.$inst() === sync; // true
 
 Creates a three-way binding between a scope variable and Firebase data. When the `scope` data is
 updated, changes are pushed to Firebase, and when changes occur in Firebase, they are pushed
-instantly into `scope`.
-
-This method returns a promise that resolves after the initial value is pulled from Firebase
-and set in the `scope` variable.
+instantly into `scope`. This method returns a promise that resolves after the initial value is 
+pulled from Firebase and set in the `scope` variable.
 
 ```js
 var ref = new Firebase(URL); // assume value here is {foo: 'bar'}
@@ -453,9 +462,9 @@ obj.$bindTo($scope, 'data').then(function() {
 });
 ```
 
-**IMPORTANT NOTE**: Angular.js does not report variables prefixed with `$` to any `$watch` listeners.
-So to set `$priority` or `$value`, we must manually call `$save()` and should not rely on
-`$bindTo` to automatically sync those changes. 
+We can now bind to any property on our object directly in the HTML, and have it saved
+instantly to Firebase. Security rules can be used for validation to ensure data is formatted
+correctly at the server.
 
 ```html
 <!-- 
@@ -463,6 +472,22 @@ So to set `$priority` or `$value`, we must manually call `$save()` and should no
   (changing value updates remote data; remote changes are applied here) 
 -->
 <input type="text" ng-model="data.foo" />
+```
+
+Only one scope variable can be bound at a time. If a second attempts to bind, the promise
+will be rejected and the bind will fail.
+
+
+**IMPORTANT NOTE**: Angular.js does not report variables prefixed with `$` to any `$watch` listeners.
+a simple workaround here is to use a variable prefixed with _, which will not be saved to the
+server, but will trigger $watch.
+
+```js
+var obj = $firebase(ref).$asObject();
+obj.$bindTo($scope, 'widget').then(function() {
+  $scope.widget.$priority = 99;
+  $scope.widget._updated = true;
+})
 ```
 
 If `$destroy` is emitted by `scope` (this happens when a controller is destroyed), then this
